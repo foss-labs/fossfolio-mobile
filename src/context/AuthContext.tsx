@@ -1,5 +1,5 @@
-import type { Child } from "@/types";
-import { createContext, useEffect, useMemo } from "react";
+import type { Child, User } from "@/types";
+import { createContext, useEffect, useMemo, useState } from "react";
 import { ENV } from "@/config/env";
 import {
   GoogleSignin,
@@ -9,15 +9,20 @@ import { apiHandler } from "@/config/apiHandler";
 import { Alert } from "react-native";
 import { useAuthTokens } from "@/store/useAuthTokens";
 import { getTokens } from "@/config/handleTokens";
+import { useToggle } from "@/hooks/useToggle";
 
 interface ContextProps {
   signIn: () => Promise<void>;
+  user: User | null;
+  isLoading: boolean;
 }
 
 export const AuthContext = createContext({} as ContextProps);
 
 export const AuthCtxProvider = ({ children }: Child) => {
-  const { setToken } = useAuthTokens();
+  const { setToken, accessToken, refreshToken } = useAuthTokens();
+  const [user, setUser] = useState<User | null>();
+  const [isLoading, toggleLoading] = useToggle();
 
   useEffect(() => {
     GoogleSignin.configure({
@@ -52,17 +57,45 @@ export const AuthCtxProvider = ({ children }: Child) => {
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         Alert.alert("Play services not available or outdated");
       } else {
+        console.log(error);
         Alert.alert("Unable to signIn");
       }
     }
   };
 
+  const getUser = async () => {
+    try {
+      toggleLoading.on();
+      const { data } = await apiHandler.get("/user");
+      console.log(data);
+      setUser(data);
+    } catch (e) {
+      console.log(e);
+      console.error("Error Authenticating user");
+    } finally {
+      toggleLoading.off();
+    }
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  useEffect(() => {
+    (async () => {
+      if (accessToken || refreshToken) {
+        await getUser();
+      }
+    })();
+
+    console.log(accessToken, refreshToken);
+  }, [accessToken, refreshToken, setToken]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: SignIn Dont need to be a dependency
   const values = useMemo(
     () => ({
       signIn: signIn,
+      user,
+      isLoading,
     }),
-    []
+    [isLoading, user]
   );
 
   return <AuthContext.Provider value={values}>{children}</AuthContext.Provider>;

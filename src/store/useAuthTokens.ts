@@ -19,3 +19,7 @@ export const useAuthTokens = create<AuthTokensState & AuthTokensActions>(
       set({ refreshToken: refreshToken, accessToken: accessToken }),
   })
 );
+
+export const setToken = (refreshToken: string, accessToken: string) => {
+  useAuthTokens.setState({ accessToken, refreshToken });
+};

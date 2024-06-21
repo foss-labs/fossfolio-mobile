@@ -1,12 +1,13 @@
 import { useAuth } from "@/hooks/useAuth";
-import { View, Button, Alert } from "react-native";
+import { View, Button, Alert, Text } from "react-native";
 
 const Home = () => {
-  const { signIn } = useAuth();
+  const { signIn, user } = useAuth();
 
   return (
     <View>
       <Button title="Login" onPress={signIn} />
+      <Text>{user?.email && user?.email}</Text>
     </View>
   );
 };

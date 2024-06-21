@@ -1,8 +1,9 @@
 import Axios from "axios";
 import { ENV } from "./env";
-import { useAuthTokens } from "@/store/useAuthTokens";
+import { setToken, useAuthTokens } from "@/store/useAuthTokens";
 import type { AxiosError, AxiosResponse } from "axios";
 import { storeTokens } from "@/config/handleTokens";
+import { Alert } from "react-native";
 
 export const apiHandler = Axios.create({
   baseURL: ENV.api_base,
@@ -16,32 +17,45 @@ export const apiHandler = Axios.create({
 let isRefreshing = false;
 let refreshQueue: (() => void)[] = [];
 
+apiHandler.interceptors.request.use(
+  (config) => {
+    const { accessToken, refreshToken } = useAuthTokens.getState();
+    config.headers.Cookie = `access_token=${accessToken};refresh_token=${refreshToken};`;
+    console.log(config);
+    return config;
+  },
+  (error) => {
+    Alert.alert("Network Error");
+    Promise.reject(error);
+  }
+);
+
 apiHandler.interceptors.response.use(
-  (response: AxiosResponse) => {
+  async (response: AxiosResponse) => {
     if (
       response.status === 200 &&
-      response.request.responseURL ===
+      response.request.responseURL.includes(
         `${ENV.api_base}/auth/google/callback/mobile`
+      )
     ) {
       // Extract refreshToken and token from header
-      const bearerToken = response.headers.Authorization.split(" ")[1];
-      const refreshToken = response.headers["Refresh-Token"];
+      const bearerToken = response.headers.authorization.split(" ")[1];
+      const refreshToken = response.headers["refresh-token"];
       // set the token to storage
-      storeTokens(refreshToken, bearerToken)
-        .then(() => console.log("Token Saved successfully"))
-        .then((error) => console.warn(error));
+      await storeTokens(refreshToken, bearerToken);
       // set the same token to zustand
-      const { setToken } = useAuthTokens();
       setToken(refreshToken, bearerToken);
     }
+
+    console.log(response.data, response.request.responseURL);
     return response;
   },
   async (error: AxiosError) => {
+    console.log(error);
     if (
       error.response?.status === 401 &&
       error.request.responseURL !== `${ENV.api_base}/auth/refresh`
     ) {
-      const originalRequestURL = window.location.href;
       // Create a promise to retry the original request after the token is refreshed
       const retryOriginalRequest = new Promise((resolve) => {
         refreshQueue.push(() => resolve(apiHandler(error.request)));
@@ -51,7 +65,6 @@ apiHandler.interceptors.response.use(
           isRefreshing = true;
           // new tokens are stored directly to cookies
           await apiHandler.get("/auth/refresh");
-          window.location.href = originalRequestURL;
         } catch (refreshError) {
           isRefreshing = false;
           throw new Error();
